@@ -1,37 +1,54 @@
 import { readFile, unlink, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname } from 'node:path';
 
 import { glob } from 'glob';
-import type { PluginOption } from 'vite';
+import type { PluginOption, ResolvedConfig } from 'vite';
 
 export interface RemoveSourcemapOptions {
   commentOnly?: boolean;
-  outDir: string;
 }
 
-export function removeSourcemap({ commentOnly, outDir }: RemoveSourcemapOptions): PluginOption {
+const extensions = new Set(['.js', '.mjs', '.cjs']);
+const regexp = /\s*\/\/#\s*sourcemappingurl=.*$/i;
+
+export function removeSourcemap(
+  pattern: string | string[],
+  { commentOnly }: RemoveSourcemapOptions,
+): PluginOption {
+  let viteConfig: ResolvedConfig;
+
   return {
     apply: 'build',
     async closeBundle() {
-      const paths = await glob(join(outDir, '**', '*.{cjs,js,mjs,map}'));
+      if (!viteConfig) {
+        return;
+      }
 
-      await Promise.all(
+      const paths = await glob(pattern, {
+        absolute: true,
+        cwd: viteConfig.root,
+        nodir: true,
+      });
+
+      await Promise.allSettled(
         paths.map(async (path) => {
           const extension = extname(path);
 
-          if (['.js', '.mjs', '.cjs'].includes(extension)) {
-            return readFile(path, 'utf8').then((code) =>
-              writeFile(
-                path,
-                code.trimEnd().replace(/\s*\/\/#\s*sourcemappingurl=.*$/i, ''),
-                'utf8',
-              ),
-            );
+          if (extensions.has(extension)) {
+            const originalCode = await readFile(path, 'utf8');
+            const updatedCode = originalCode.trimEnd().replace(regexp, '');
+
+            if (originalCode !== updatedCode) {
+              await writeFile(path, updatedCode, 'utf8');
+            }
           } else if (!commentOnly && extension === '.map') {
-            return unlink(path);
+            await unlink(path);
           }
         }),
       );
+    },
+    configResolved(config) {
+      viteConfig = config;
     },
     enforce: 'post',
     name: 'remove-sourcemap',
