@@ -13,7 +13,7 @@ const regexp = /\s*\/\/#\s*sourcemappingurl=.*$/i;
 
 export function removeSourcemap(
   pattern: string | string[],
-  { commentOnly }: RemoveSourcemapOptions,
+  options?: RemoveSourcemapOptions,
 ): PluginOption {
   let viteConfig: ResolvedConfig;
 
@@ -41,7 +41,7 @@ export function removeSourcemap(
             if (originalCode !== updatedCode) {
               await writeFile(path, updatedCode, 'utf8');
             }
-          } else if (!commentOnly && extension === '.map') {
+          } else if (!options?.commentOnly && extension === '.map') {
             await unlink(path);
           }
         }),
